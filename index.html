@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DNS Checker</title>
+<style>
+  :root{
+    --bg:#0a0a0b; --surface:#131315; --surface2:#1a1a1d; --border:#28282c;
+    --text:#e9e9ec; --muted:#8b8b92; --muted2:#5c5c62;
+    --ok:#22c55e; --warn:#f0a020; --bad:#ef4444; --info:#8b8b92;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    --radius:8px;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --bg:#ffffff; --surface:#ffffff; --surface2:#f4f4f5; --border:#e4e4e7;
+      --text:#18181b; --muted:#71717a; --muted2:#a1a1aa;
+    }
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);}
+  .wrap{max-width:980px;margin:0 auto;padding:28px 18px 80px;}
+  header{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;}
+  .brand{display:flex;align-items:baseline;gap:10px;}
+
+  .brand h1{font-size:16px;letter-spacing:.02em;font-weight:600;margin:0;font-family:var(--mono);}
+  .brand span{color:var(--muted2);font-size:12px;font-family:var(--mono);}
+  .themebtn{border:1px solid var(--border);background:var(--surface);color:var(--muted);border-radius:6px;padding:6px 10px;font-size:12px;cursor:pointer;font-family:var(--mono);}
+  .themebtn:hover{color:var(--text);}
+
+  .search{display:flex;gap:8px;margin-bottom:6px;}
+  .search input{flex:1;background:var(--surface);border:1px solid var(--border);color:var(--text);
+    padding:12px 14px;border-radius:var(--radius);font-family:var(--mono);font-size:14px;outline:none;}
+  .search input:focus{border-color:var(--muted2);}
+  .search button{background:var(--text);color:var(--bg);border:none;padding:0 20px;border-radius:var(--radius);
+    font-family:var(--mono);font-size:13px;font-weight:600;cursor:pointer;letter-spacing:.02em;}
+  .search button:disabled{opacity:.4;cursor:default;}
+  .hint{color:var(--muted2);font-size:11px;font-family:var(--mono);margin-bottom:20px;}
+
+  .progress{display:none;flex-wrap:wrap;gap:6px;margin-bottom:22px;}
+  .progress.show{display:flex;}
+  .step{font-family:var(--mono);font-size:11px;padding:5px 9px;border-radius:5px;background:var(--surface);
+    border:1px solid var(--border);color:var(--muted2);display:flex;align-items:center;gap:6px;}
+  .step.active{color:var(--text);border-color:var(--muted2);}
+  .step.done{color:var(--ok);border-color:var(--border);}
+  .step .spin{width:8px;height:8px;border-radius:50%;border:1.5px solid var(--muted2);border-top-color:var(--text);
+    animation:spin .7s linear infinite;}
+  .step.done .spin{display:none;}
+  .step.done::before{content:"✓";}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  .results{display:none;}
+  .results.show{display:block;}
+  .toolbar{display:flex;gap:8px;justify-content:flex-end;margin-bottom:16px;}
+  .toolbar button{background:var(--surface);border:1px solid var(--border);color:var(--muted);
+    font-family:var(--mono);font-size:11px;padding:7px 11px;border-radius:6px;cursor:pointer;}
+  .toolbar button:hover{color:var(--text);border-color:var(--muted2);}
+
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:12px;}
+  @media(max-width:680px){.grid{grid-template-columns:1fr;}}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;}
+  .card h3{margin:0 0 12px;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;}
+  .row{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px dashed var(--border);font-size:13px;}
+  .row:last-child{border-bottom:none;}
+  .row .k{color:var(--muted);font-family:var(--mono);font-size:12px;flex-shrink:0;}
+  .row .v{font-family:var(--mono);font-size:12px;text-align:right;word-break:break-all;color:var(--text);}
+  .v.empty{color:var(--muted2);}
+  .taglist{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;}
+  .tag{background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:11px;font-family:var(--mono);}
+
+  .badge{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:20px;font-size:11px;font-family:var(--mono);font-weight:600;white-space:nowrap;}
+  .badge.on{background:rgba(240,160,32,.12);color:var(--warn);}
+  .badge.off{background:rgba(139,139,146,.12);color:var(--muted);}
+  .badge.good{background:rgba(34,197,94,.12);color:var(--ok);}
+  .badge.bad{background:rgba(239,68,68,.12);color:var(--bad);}
+
+  .full{grid-column:1/-1;}
+  .center-note{color:var(--muted2);font-family:var(--mono);font-size:12px;text-align:center;padding:22px 10px;}
+
+  .conf{font-size:10px;padding:2px 7px;border-radius:4px;font-family:var(--mono);font-weight:700;letter-spacing:.03em;}
+  .conf.High{background:rgba(34,197,94,.15);color:var(--ok);}
+  .conf.Medium{background:rgba(240,160,32,.15);color:var(--warn);}
+  .conf.Low{background:rgba(239,68,68,.15);color:var(--bad);}
+
+  .origin-item{border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:8px;background:var(--surface2);}
+  .origin-item .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+  .origin-item .ip{font-family:var(--mono);font-size:14px;font-weight:600;}
+  .origin-item .meta{display:flex;flex-wrap:wrap;gap:14px;font-size:11px;color:var(--muted);font-family:var(--mono);}
+  .origin-item .meta b{color:var(--text);font-weight:500;}
+  .copybtn{border:1px solid var(--border);background:transparent;color:var(--muted2);border-radius:4px;
+    padding:2px 7px;font-size:10px;cursor:pointer;font-family:var(--mono);}
+  .copybtn:hover{color:var(--text);}
+
+  table.subs{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px;}
+  table.subs th{text-align:left;color:var(--muted);font-weight:500;font-size:11px;padding:6px 8px;border-bottom:1px solid var(--border);}
+  table.subs td{padding:7px 8px;border-bottom:1px solid var(--border);}
+  table.subs tr:last-child td{border-bottom:none;}
+
+  .err{color:var(--bad);font-family:var(--mono);font-size:12px;padding:10px;background:rgba(239,68,68,.08);border-radius:6px;margin-bottom:12px;}
+  .muted-small{color:var(--muted2);font-size:11px;font-family:var(--mono);margin-top:6px;}
+
+  .whois-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:8px;}
+  @media(max-width:768px){.whois-grid{grid-template-columns:1fr;}}
+  .whois-section{background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:14px;}
+  .whois-section h4{margin:0 0 12px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border-bottom:1px solid var(--border);padding-bottom:6px;font-weight:600;}
+
+  .unregistered-state{text-align:center;padding:32px 16px;background:rgba(34,197,94,0.06);border:1px dashed var(--ok);border-radius:var(--radius);margin-top:8px;}
+  .unregistered-state .icon{font-size:24px;margin-bottom:8px;}
+  .unregistered-state h4{margin:0 0 6px;font-size:14px;color:var(--ok);font-weight:600;font-family:var(--mono);}
+  .unregistered-state p{margin:0;font-size:12px;color:var(--muted);line-height:1.5;}
+
+  .error-state{text-align:center;padding:24px 16px;background:rgba(239,68,68,0.06);border:1px dashed var(--bad);border-radius:var(--radius);margin-top:8px;}
+  .error-state .icon{font-size:20px;margin-bottom:6px;color:var(--bad);}
+  .error-state h4{margin:0 0 4px;font-size:13px;color:var(--bad);font-weight:600;font-family:var(--mono);}
+  .error-state p{margin:0;font-size:11px;color:var(--muted);line-height:1.4;}
+
+  .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;width:100%;}
+
+  footer{text-align:center;margin-top:40px;font-size:11px;font-family:var(--mono);color:var(--muted2);border-top:1px solid var(--border);padding-top:20px;}
+  footer a{color:var(--muted);text-decoration:none;font-weight:500;}
+  footer a:hover{color:var(--text);text-decoration:underline;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand"><h1>dns-checker</h1><span>v1</span></div>
+  </header>
+
+  <div class="search">
+    <input id="domainInput" type="text" placeholder="example.com" spellcheck="false" autocomplete="off">
+    <button id="checkBtn">Check</button>
+  </div>
+  <div class="hint">Enter a domain (no protocol). Data via public DoH resolvers, RDAP and CT logs.</div>
+
+  <div class="progress" id="progress"></div>
+  <div id="errBox"></div>
+
+  <div class="results" id="results">
+    <div class="toolbar">
+      <button id="copyIpBtn">Copy returned IP</button>
+      <button id="downloadJson">Download JSON</button>
+      <button id="downloadCsv">Download CSV</button>
+    </div>
+
+    <div class="grid">
+      <div class="card"><h3>A Record</h3><div id="rec-A"></div></div>
+      <div class="card"><h3>AAAA Record</h3><div id="rec-AAAA"></div></div>
+      <div class="card"><h3>CNAME</h3><div id="rec-CNAME"></div></div>
+      <div class="card"><h3>MX</h3><div id="rec-MX"></div></div>
+      <div class="card"><h3>NS</h3><div id="rec-NS"></div></div>
+      <div class="card"><h3>TXT</h3><div id="rec-TXT"></div></div>
+      <div class="card"><h3>SOA</h3><div id="rec-SOA"></div></div>
+      <div class="card"><h3>CAA</h3><div id="rec-CAA"></div></div>
+      <div class="card"><h3>DNSSEC</h3><div id="rec-DNSSEC"></div></div>
+      <div class="card"><h3>Response Time</h3><div id="rec-TIME"></div></div>
+    </div>
+
+    <div class="grid">
+      <div class="card full"><h3>WHOIS Summary</h3><div id="whois-box"></div></div>
+    </div>
+
+    <div class="grid">
+      <div class="card full"><h3>Cloudflare Status</h3><div id="cf-box"></div></div>
+    </div>
+
+    <div class="grid" id="originSection" style="display:none;">
+      <div class="card full"><h3>Origin Search</h3><div id="origin-box"></div></div>
+    </div>
+
+    <div class="grid" id="subsSection" style="display:none;">
+      <div class="card full"><h3>Discovered Subdomains</h3><div id="subs-box"></div></div>
+    </div>
+  </div>
+  <footer>Designed and built by <a href="https://nijin.site" target="_blank">Nijin</a></footer>
+</div>
+
+<script>
+/* ============================= UTIL ============================= */
+const $ = id => document.getElementById(id);
+const cache = new Map(); // simple TTL cache
+function cacheGet(k){ const e = cache.get(k); if(!e) return null; if(Date.now()>e.exp){cache.delete(k);return null;} return e.v; }
+function cacheSet(k,v,ttl=60000){ cache.set(k,{v,exp:Date.now()+ttl}); }
+
+// basic rate limiter: max N concurrent
+function makeLimiter(max){
+  let active=0; const q=[];
+  const run = async (fn) => {
+    if(active>=max){ await new Promise(r=>q.push(r)); }
+    active++;
+    try{ return await fn(); } finally{ active--; if(q.length) q.shift()(); }
+  };
+  return run;
+}
+const limit = makeLimiter(6);
+
+async function fetchJson(url, opts={}, timeoutMs=8000){
+  const ctrl = new AbortController();
+  const t = setTimeout(()=>ctrl.abort(), timeoutMs);
+  try{
+    const res = await fetch(url, {...opts, signal: ctrl.signal});
+    clearTimeout(t);
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    return await res.json();
+  }catch(e){ clearTimeout(t); throw e; }
+}
+
+// Plain text/html fetch with a chain of public CORS proxies as fallback,
+// used for sites that don't send Access-Control-Allow-Origin themselves.
+const CORS_PROXIES = [
+  u => u, // try direct first
+  u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+  u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`
+];
+async function fetchTextViaProxies(url, timeoutMs=9000){
+  for(const wrap of CORS_PROXIES){
+    const ctrl = new AbortController();
+    const t = setTimeout(()=>ctrl.abort(), timeoutMs);
+    try{
+      const res = await fetch(wrap(url), {signal: ctrl.signal});
+      clearTimeout(t);
+      if(!res.ok) continue;
+      const text = await res.text();
+      if(text && text.length > 20) return text;
+    }catch(e){ clearTimeout(t); /* try next proxy */ }
+  }
+  return null;
+}
+
+/* ============================= DNS (DoH) MODULE ============================= */
+const DNS = {
+  async query(name, type){
+    const key = `${name}|${type}`;
+    const hit = cacheGet(key); if(hit) return hit;
+    return limit(async ()=>{
+      const url = `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(name)}&type=${type}&do=1`;
+      try{
+        const data = await fetchJson(url, {headers:{accept:'application/dns-json'}});
+        cacheSet(key, data, 45000);
+        return data;
+      }catch(e){
+        try{
+          const url2 = `https://dns.google/resolve?name=${encodeURIComponent(name)}&type=${type}`;
+          const data = await fetchJson(url2);
+          cacheSet(key, data, 45000);
+          return data;
+        }catch(e2){ return null; }
+      }
+    });
+  },
+  async records(name, type){
+    const d = await this.query(name, type);
+    if(!d || !d.Answer) return [];
+    return d.Answer.filter(a=>a.type===this.typeNum(type)).map(a=>a.data);
+  },
+  typeNum(t){
+    return {A:1,NS:2,CNAME:5,SOA:6,MX:15,TXT:16,AAAA:28,CAA:257,DNSKEY:48}[t];
+  },
+  async reverse(ip){
+    const isV6 = ip.includes(':');
+    let ptrName;
+    if(isV6){
+      const full = expandIPv6(ip);
+      ptrName = full.replace(/:/g,'').split('').reverse().join('.') + '.ip6.arpa';
+    } else {
+      ptrName = ip.split('.').reverse().join('.') + '.in-addr.arpa';
+    }
+    const recs = await this.records(ptrName, 'PTR' in this.typeNum ? 'PTR' : 'PTR');
+    return recs[0] || null;
+  }
+};
+// PTR isn't in typeNum map above; patch a generic query for PTR type=12
+DNS.reverse = async function(ip){
+  const isV6 = ip.includes(':');
+  let ptrName;
+  if(isV6){
+    const full = expandIPv6(ip);
+    ptrName = full.replace(/:/g,'').split('').reverse().join('.') + '.ip6.arpa';
+  } else {
+    ptrName = ip.split('.').reverse().join('.') + '.in-addr.arpa';
+  }
+  const d = await this.query(ptrName, 'PTR');
+  if(!d || !d.Answer) return null;
+  const ans = d.Answer.find(a=>a.type===12);
+  return ans ? ans.data.replace(/\.$/,'') : null;
+};
+function expandIPv6(ip){
+  if(!ip.includes('::')) return ip.split(':').map(g=>g.padStart(4,'0')).join(':');
+  const [head, tail] = ip.split('::');
+  const h = head ? head.split(':') : [];
+  const t = tail ? tail.split(':') : [];
+  const missing = 8 - h.length - t.length;
+  const mid = new Array(missing).fill('0000');
+  return [...h, ...mid, ...t].map(g=>g.padStart(4,'0')).join(':');
+}
+
+/* ============================= CLOUDFLARE IP RANGES ============================= */
+const CF_V4 = ["173.245.48.0/20","103.21.244.0/22","103.22.200.0/22","103.31.4.0/22","141.101.64.0/18",
+"108.162.192.0/18","190.93.240.0/20","188.114.96.0/20","197.234.240.0/22","198.41.128.0/17",
+"162.158.0.0/15","104.16.0.0/13","104.24.0.0/14","172.64.0.0/13","131.0.72.0/22"];
+const CF_V6 = ["2400:cb00::/32","2606:4700::/32","2803:f800::/32","2405:b500::/32","2405:8100::/32",
+"2a06:98c0::/29","2c0f:f248::/32"];
+
+function ipToLong(ip){ return ip.split('.').reduce((a,o)=>(a<<8)+parseInt(o,10), 0) >>> 0; }
+function ipv4InCidr(ip, cidr){
+  const [range, bits] = cidr.split('/');
+  const mask = bits==0 ? 0 : (~0 << (32-bits)) >>> 0;
+  return (ipToLong(ip) & mask) === (ipToLong(range) & mask);
+}
+function ipv6InCidr(ip, cidr){
+  const [range, bits] = cidr.split('/');
+  const b = parseInt(bits,10);
+  const full = expandIPv6(ip).replace(/:/g,'');
+  const rfull = expandIPv6(range).replace(/:/g,'');
+  const hexChars = Math.ceil(b/4);
+  return full.slice(0,hexChars).toLowerCase() === rfull.slice(0,hexChars).toLowerCase();
+}
+function isCloudflareIP(ip){
+  if(!ip) return false;
+  if(ip.includes(':')) return CF_V6.some(c=>{ try{return ipv6InCidr(ip,c);}catch{return false;} });
+  return CF_V4.some(c=>ipv4InCidr(ip,c));
+}
+function isCloudflareNS(ns){ return /\.ns\.cloudflare\.com\.?$/i.test(ns) || /cloudflare/i.test(ns); }
+
+/* ============================= ASN / HOSTING LOOKUP ============================= */
+async function asnLookup(ip){
+  const key = 'asn|'+ip;
+  const hit = cacheGet(key); if(hit) return hit;
+  try{
+    const d = await limit(()=>fetchJson(`https://ipwho.is/${ip}`));
+    const out = {
+      asn: d.connection?.asn ? 'AS'+d.connection.asn : 'Unknown',
+      org: d.connection?.org || d.connection?.isp || 'Unknown',
+      country: d.country || ''
+    };
+    cacheSet(key, out, 300000);
+    return out;
+  }catch(e){ return {asn:'Unknown', org:'Unknown', country:''}; }
+}
+const KNOWN_HOSTS = ['Google','Amazon','AWS','Microsoft','Azure','DigitalOcean','Hetzner','OVH','Linode','Vultr','Cloudflare'];
+function classifyProvider(org){
+  const hit = KNOWN_HOSTS.find(h=>org && org.toLowerCase().includes(h.toLowerCase()));
+  return hit || org || 'Unknown';
+}
+
+/* ============================= WHOIS (RDAP) ============================= */
+function parseVcard(vcardArray) {
+  if (!vcardArray || vcardArray[0] !== 'vcard' || !Array.isArray(vcardArray[1])) return {};
+  const fields = {};
+  vcardArray[1].forEach(prop => {
+    if (!Array.isArray(prop)) return;
+    const name = prop[0];
+    const value = prop[3];
+    if (name === 'fn') {
+      fields.fn = value;
+    } else if (name === 'org') {
+      fields.org = Array.isArray(value) ? value.join(', ') : value;
+    } else if (name === 'email') {
+      fields.email = value;
+    } else if (name === 'tel') {
+      fields.phone = typeof value === 'string' ? value.replace(/^tel:/i, '') : value;
+    } else if (name === 'adr') {
+      if (Array.isArray(value)) {
+        fields.street = value[2] || '';
+        fields.city = value[3] || '';
+        fields.state = value[4] || '';
+        fields.postalCode = value[5] || '';
+        fields.country = value[6] || '';
+      }
+    }
+  });
+  return fields;
+}
+
+function findEntityByRole(entities, role) {
+  if (!entities) return null;
+  for (const e of entities) {
+    if ((e.roles || []).includes(role)) return e;
+    const found = findEntityByRole(e.entities, role);
+    if (found) return found;
+  }
+  return null;
+}
+
+function getEventDate(events, keys) {
+  if (!events) return null;
+  for (const k of keys) {
+    const ev = events.find(e => e.eventAction && e.eventAction.toLowerCase() === k.toLowerCase());
+    if (ev && ev.eventDate) return ev.eventDate.split('T')[0];
+  }
+  return null;
+}
+
+async function whoisLookup(domain){
+  try{
+    const d = await fetchJson(`https://rdap.org/domain/${domain}`);
+    
+    // Dates
+    const registeredOn = getEventDate(d.events, ['registration', 'created', 'creation']);
+    const expiresOn = getEventDate(d.events, ['expiration', 'expiry', 'expires']);
+    const updatedOn = getEventDate(d.events, ['last changed', 'changed', 'updated', 'last update of rdap database']);
+    
+    // Status & Nameservers
+    const status = d.status || [];
+    const nameservers = (d.nameservers || []).map(n => n.ldhName).filter(Boolean);
+    
+    // Entities
+    const registrarEnt = findEntityByRole(d.entities, 'registrar');
+    const registrantEnt = findEntityByRole(d.entities, 'registrant');
+    const techEnt = findEntityByRole(d.entities, 'technical');
+    
+    const registrarInfo = registrarEnt ? parseVcard(registrarEnt.vcardArray) : {};
+    const registrantInfo = registrantEnt ? parseVcard(registrantEnt.vcardArray) : {};
+    const techInfo = techEnt ? parseVcard(techEnt.vcardArray) : {};
+    
+    // IANA ID
+    const ianaId = registrarEnt?.publicIds?.find(p => p.type && p.type.toLowerCase().includes('iana'))?.identifier || null;
+    
+    // Abuse details
+    const abuseEnt = findEntityByRole(registrarEnt ? registrarEnt.entities : null, 'abuse') || findEntityByRole(d.entities, 'abuse');
+    const abuseInfo = abuseEnt ? parseVcard(abuseEnt.vcardArray) : {};
+    
+    return {
+      domain,
+      registeredOn,
+      expiresOn,
+      updatedOn,
+      status,
+      nameservers,
+      registrar: {
+        name: registrarInfo.fn || registrarInfo.org || null,
+        ianaId: ianaId,
+        email: registrarInfo.email || null,
+        abuseEmail: abuseInfo.email || null,
+        abusePhone: abuseInfo.phone || null
+      },
+      registrant: {
+        organization: registrantInfo.org || registrantInfo.fn || null,
+        street: registrantInfo.street || null,
+        city: registrantInfo.city || null,
+        state: registrantInfo.state || null,
+        postalCode: registrantInfo.postalCode || null,
+        country: registrantInfo.country || null,
+        phone: registrantInfo.phone || null,
+        email: registrantInfo.email || null
+      },
+      technical: {
+        organization: techInfo.org || techInfo.fn || null,
+        street: techInfo.street || null,
+        city: techInfo.city || null,
+        state: techInfo.state || null,
+        postalCode: techInfo.postalCode || null,
+        country: techInfo.country || null,
+        phone: techInfo.phone || null,
+        email: techInfo.email || null
+      },
+      raw: d,
+      success: true
+    };
+  }catch(e){
+    return { error: true, message: e.message || String(e) };
+  }
+}
+
+/* ============================= CT LOGS ============================= */
+async function ctSubdomains(domain){
+  const url = `https://crt.sh/?q=${encodeURIComponent('%.'+domain)}&output=json`;
+  // try direct JSON first, then fall back to text-via-proxy + JSON.parse
+  let data = null;
+  try{ data = await fetchJson(url, {}, 12000); }
+  catch(e){
+    const text = await fetchTextViaProxies(url, 12000);
+    if(text){ try{ data = JSON.parse(text); }catch(_){ data = null; } }
+  }
+  if(!data) return null; // null = unavailable (network/CORS), not "no results"
+  const names = new Set();
+  data.forEach(row=>{
+    (row.name_value||'').split('\n').forEach(n=>{
+      n = n.trim().toLowerCase().replace(/^\*\./,'');
+      if(n.endsWith(domain) && n!==domain && !n.includes('*')) names.add(n);
+    });
+  });
+  return [...names].slice(0, 25);
+}
+
+/* ============================= HISTORICAL DNS (dnshistory.org) ============================= */
+// Scrapes dnshistory.org's public historical-record pages (no API key required).
+// Page format: https://dnshistory.org/historical-dns-records/{type}/{domain}
+// Body contains lines like: "2013-11-26 -> 2013-11-26 70.32.43.226"
+async function historicalDns(domain){
+  const out = { a: [], aaaa: [], available: false };
+  for(const type of ['a','aaaa']){
+    const url = `https://dnshistory.org/historical-dns-records/${type}/${domain}`;
+    const text = await fetchTextViaProxies(url, 10000);
+    if(!text) continue;
+    out.available = true;
+    const re = type==='a'
+      ? /\b(\d{1,3}(?:\.\d{1,3}){3})\b/g
+      : /\b([0-9a-f]{0,4}(?::[0-9a-f]{0,4}){2,7})\b/gi;
+    const found = new Set();
+    let m;
+    while((m = re.exec(text))){
+      const ip = m[1];
+      // skip obvious non-IPs / dates picked up by loose regex
+      if(type==='a' && ip.split('.').some(o=>+o>255)) continue;
+      found.add(ip);
+    }
+    out[type] = [...found];
+  }
+  return out;
+}
+
+/* ============================= COMMON SUBDOMAINS ============================= */
+const COMMON_SUBS = ["origin","server","direct","cpanel","webmail","mail","ftp","smtp","imap",
+"autodiscover","api","admin","dev","staging","test","beta","old","vpn"];
+
+/* ============================= PROGRESS UI ============================= */
+const STEP_DEFS = [
+  ['dns','DNS Records'],['whois','WHOIS / RDAP'],['cf','Cloudflare Detection'],
+  ['hist','Historical DNS'],['subs','Common Subdomains'],['ct','Certificate Transparency'],
+  ['rdns','Reverse DNS'],['asn','ASN Validation']
+];
+function initProgress(){
+  const el = $('progress'); el.innerHTML=''; el.classList.add('show');
+  STEP_DEFS.forEach(([id,label])=>{
+    const d = document.createElement('div');
+    d.className='step'; d.id='step-'+id;
+    d.innerHTML = `<span class="spin"></span><span>${label}</span>`;
+    el.appendChild(d);
+  });
+}
+function setStep(id, state){
+  const el = $('step-'+id); if(!el) return;
+  el.classList.remove('active','done');
+  if(state) el.classList.add(state);
+}
+
+/* ============================= RENDER HELPERS ============================= */
+function renderList(elId, items, empty='No records found'){
+  const el = $(elId);
+  if(!items || !items.length){ el.innerHTML = `<div class="row"><span class="v empty">${empty}</span></div>`; return; }
+  el.innerHTML = items.map(v=>`<div class="row"><span class="v" style="text-align:left;flex:1">${escapeHtml(v)}</span></div>`).join('');
+}
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+/* ============================= MAIN CHECK ============================= */
+let lastResult = null;
+
+$('checkBtn').onclick = () => runCheck();
+$('domainInput').addEventListener('keydown', e=>{ if(e.key==='Enter') runCheck(); });
+
+async function runCheck(skipPushState = false){
+  let domain = $('domainInput').value.trim().toLowerCase();
+  domain = domain.replace(/^https?:\/\//,'').replace(/\/.*$/,'');
+  $('errBox').innerHTML = '';
+  if(!domain || !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain)){
+    $('errBox').innerHTML = `<div class="err">Enter a valid domain, e.g. example.com</div>`;
+    return;
+  }
+  
+  if (!skipPushState) {
+    const currentPath = window.location.pathname.replace(/^\//, '');
+    if (currentPath !== domain) {
+      window.history.pushState({}, '', '/' + domain);
+    }
+  }
+  
+  $('checkBtn').disabled = true;
+  $('results').classList.remove('show');
+  $('originSection').style.display='none';
+  $('subsSection').style.display='none';
+  initProgress();
+
+  const result = { domain, checkedAt: new Date().toISOString() };
+
+  try{
+    // --- Step 1: DNS records (parallel) ---
+    setStep('dns','active');
+    const t0 = performance.now();
+    const [A, AAAA, CNAME, MX, NS, TXT, SOA, CAA, DNSKEY] = await Promise.all([
+      DNS.records(domain,'A'), DNS.records(domain,'AAAA'), DNS.records(domain,'CNAME'),
+      DNS.records(domain,'MX'), DNS.records(domain,'NS'), DNS.records(domain,'TXT'),
+      DNS.records(domain,'SOA'), DNS.records(domain,'CAA'), DNS.records(domain,'DNSKEY')
+    ]);
+    const responseTime = Math.round(performance.now()-t0);
+    result.records = {A,AAAA,CNAME,MX,NS,TXT,SOA,CAA};
+    result.dnssec = DNSKEY.length ? 'Signed (DNSKEY present)' : 'Not signed';
+    result.responseTimeMs = responseTime;
+
+    renderList('rec-A', A); renderList('rec-AAAA', AAAA); renderList('rec-CNAME', CNAME);
+    renderList('rec-MX', MX); renderList('rec-NS', NS); renderList('rec-TXT', TXT);
+    renderList('rec-SOA', SOA); renderList('rec-CAA', CAA);
+    $('rec-DNSSEC').innerHTML = `<div class="row"><span class="badge ${DNSKEY.length?'good':'off'}">${result.dnssec}</span></div>`;
+    $('rec-TIME').innerHTML = `<div class="row"><span class="v" style="text-align:left">${responseTime} ms</span></div>`;
+    setStep('dns','done');
+    $('results').classList.add('show');
+
+    // --- Step 2: WHOIS ---
+    setStep('whois','active');
+    const whois = await whoisLookup(domain);
+    result.whois = whois;
+    renderWhois(whois);
+    setStep('whois','done');
+
+    // --- Step 3: Cloudflare detection ---
+    setStep('cf','active');
+    const nsIsCf = NS.some(isCloudflareNS);
+    const ipIsCf = [...A, ...AAAA].some(isCloudflareIP);
+    const cfDetected = nsIsCf || ipIsCf;
+    result.cloudflare = { detected: cfDetected, viaNS: nsIsCf, viaIP: ipIsCf };
+    const returnedIp = A[0] || AAAA[0] || null;
+    result.returnedIp = returnedIp;
+    renderCloudflare(cfDetected, returnedIp, nsIsCf, ipIsCf);
+    setStep('cf','done');
+
+    if(!cfDetected){
+      $('checkBtn').disabled = false;
+      return;
+    }
+
+    // --- Origin discovery ---
+    $('originSection').style.display='';
+    $('subsSection').style.display='';
+    $('origin-box').innerHTML = `<div class="center-note">Searching for origin server…</div>`;
+
+    const candidates = new Map(); // ip -> {sources:[], ...}
+    const subsFound = [];
+
+    function addCandidate(ip, source, hostname){
+      if(!ip || isCloudflareIP(ip)) return;
+      if(!candidates.has(ip)) candidates.set(ip, {ip, sources:new Set(), hostnames:new Set()});
+      candidates.get(ip).sources.add(source);
+      if(hostname) candidates.get(ip).hostnames.add(hostname);
+    }
+
+    // Method 1: historical DNS (dnshistory.org)
+    setStep('hist','active');
+    let histUnavailable = false;
+    try{
+      const hist = await historicalDns(domain);
+      histUnavailable = !hist.available;
+      [...hist.a, ...hist.aaaa].forEach(ip => addCandidate(ip, 'Historical DNS', null));
+    }catch(e){ histUnavailable = true; }
+    setStep('hist','done');
+
+    // Method 2: common subdomains
+    setStep('subs','active');
+    await Promise.all(COMMON_SUBS.map(async sub=>{
+      const host = `${sub}.${domain}`;
+      const [a, aaaa] = await Promise.all([DNS.records(host,'A'), DNS.records(host,'AAAA')]);
+      const ips = [...a, ...aaaa];
+      if(!ips.length) return;
+      const proxied = ips.every(isCloudflareIP);
+      subsFound.push({ host, ips, proxied });
+      if(!proxied) ips.filter(ip=>!isCloudflareIP(ip)).forEach(ip=>addCandidate(ip, 'Common Subdomain', host));
+    }));
+    setStep('subs','done');
+
+    // Method 3: certificate transparency
+    setStep('ct','active');
+    const ctNames = await ctSubdomains(domain);
+    let ctUnavailable = ctNames === null;
+    if(ctNames && ctNames.length){
+      const already = new Set(subsFound.map(s=>s.host));
+      const toCheck = ctNames.filter(n=>!already.has(n)).slice(0,20);
+      await Promise.all(toCheck.map(async host=>{
+        const [a, aaaa] = await Promise.all([DNS.records(host,'A'), DNS.records(host,'AAAA')]);
+        const ips = [...a, ...aaaa];
+        if(!ips.length) return;
+        const proxied = ips.every(isCloudflareIP);
+        subsFound.push({ host, ips, proxied });
+        if(!proxied) ips.filter(ip=>!isCloudflareIP(ip)).forEach(ip=>addCandidate(ip, 'Certificate Transparency', host));
+      }));
+    }
+    setStep('ct','done');
+
+    // Method 4: reverse DNS for candidates
+    setStep('rdns','active');
+    await Promise.all([...candidates.values()].map(async c=>{
+      c.ptr = await DNS.reverse(c.ip).catch(()=>null);
+    }));
+    setStep('rdns','done');
+
+    // Method 5+6: ASN validation + confidence scoring
+    setStep('asn','active');
+    await Promise.all([...candidates.values()].map(async c=>{
+      const info = await asnLookup(c.ip);
+      c.asn = info.asn; c.org = info.org; c.provider = classifyProvider(info.org);
+    }));
+    // confidence: Historical DNS confirms it, or 2+ independent sources agree -> High;
+    // single subdomain/CT source with recognized hosting org -> Medium; else Low
+    [...candidates.values()].forEach(c=>{
+      const numSources = c.sources.size;
+      const isCfOrgLeak = /cloudflare/i.test(c.org||'');
+      const hasHistorical = c.sources.has('Historical DNS');
+      if(isCfOrgLeak){ c.confidence = 'Low'; }
+      else if(hasHistorical || numSources >= 2){ c.confidence = 'High'; }
+      else { c.confidence = 'Medium'; }
+    });
+    setStep('asn','done');
+
+    result.histUnavailable = histUnavailable;
+    result.originCandidates = [...candidates.values()].map(c=>({
+      ip:c.ip, sources:[...c.sources], hostnames:[...c.hostnames], ptr:c.ptr,
+      asn:c.asn, org:c.org, provider:c.provider, confidence:c.confidence
+    })).sort((a,b)=> ({High:0,Medium:1,Low:2}[a.confidence]) - ({High:0,Medium:1,Low:2}[b.confidence]) );
+    result.subsFound = subsFound;
+    result.ctUnavailable = ctUnavailable;
+
+    renderOrigin(result.originCandidates, ctUnavailable, histUnavailable);
+    renderSubs(subsFound);
+
+  }catch(e){
+    $('errBox').innerHTML = `<div class="err">Something went wrong: ${escapeHtml(e.message||String(e))}</div>`;
+  }
+  $('checkBtn').disabled = false;
+  lastResult = result;
+}
+
+function renderDomainSection(w) {
+  return `
+    <div class="whois-section">
+      <h4>Domain Information</h4>
+      <div class="row"><span class="k">Domain</span><span class="v" style="font-weight: 600;">${escapeHtml(w.domain || '—')}</span></div>
+      <div class="row"><span class="k">Registered On</span><span class="v">${escapeHtml(w.registeredOn || '—')}</span></div>
+      <div class="row"><span class="k">Expires On</span><span class="v">${escapeHtml(w.expiresOn || '—')}</span></div>
+      <div class="row"><span class="k">Updated On</span><span class="v">${escapeHtml(w.updatedOn || '—')}</span></div>
+      <div class="row"><span class="k">Status</span><span class="v"><div class="taglist">${
+        (w.status && w.status.length ? w.status.slice(0, 4) : ['—']).map(s => `<span class="tag">${escapeHtml(s)}</span>`).join('')
+      }</div></span></div>
+      <div class="row"><span class="k">Name Servers</span><span class="v"><div class="taglist">${
+        (w.nameservers && w.nameservers.length ? w.nameservers : ['—']).map(n => `<span class="tag">${escapeHtml(n)}</span>`).join('')
+      }</div></span></div>
+    </div>`;
+}
+
+function renderRegistrarSection(registrar) {
+  return `
+    <div class="whois-section">
+      <h4>Registrar Information</h4>
+      <div class="row"><span class="k">Registrar</span><span class="v">${escapeHtml(registrar?.name || '—')}</span></div>
+      <div class="row"><span class="k">IANA ID</span><span class="v">${escapeHtml(registrar?.ianaId || '—')}</span></div>
+      <div class="row"><span class="k">Email</span><span class="v">${escapeHtml(registrar?.email || '—')}</span></div>
+      <div class="row"><span class="k">Abuse Email</span><span class="v">${escapeHtml(registrar?.abuseEmail || '—')}</span></div>
+      <div class="row"><span class="k">Abuse Phone</span><span class="v">${escapeHtml(registrar?.abusePhone || '—')}</span></div>
+    </div>`;
+}
+
+function renderContactSection(title, contact) {
+  const fields = [
+    { label: 'Organization', key: 'organization' },
+    { label: 'Street', key: 'street' },
+    { label: 'City', key: 'city' },
+    { label: 'State', key: 'state' },
+    { label: 'Postal Code', key: 'postalCode' },
+    { label: 'Country', key: 'country' },
+    { label: 'Phone', key: 'phone' },
+    { label: 'Email', key: 'email' }
+  ];
+  
+  let html = `
+    <div class="whois-section">
+      <h4>${title}</h4>`;
+      
+  fields.forEach(f => {
+    const val = contact?.[f.key];
+    html += `<div class="row"><span class="k">${f.label}</span><span class="v">${val ? escapeHtml(val) : '—'}</span></div>`;
+  });
+  
+  html += `</div>`;
+  return html;
+}
+
+function renderWhois(w){
+  if(w.error || !w.success){
+    const is404 = w.message && (w.message.includes('404') || w.message.toLowerCase().includes('not found'));
+    if (is404) {
+      $('whois-box').innerHTML = `
+        <div class="unregistered-state">
+          <div class="icon">🔍</div>
+          <h4>Domain Not Registered</h4>
+          <p>The domain <strong>${escapeHtml(w.domain || $('domainInput').value.trim())}</strong> was not found in the registry databases, which typically means it is available.</p>
+        </div>`;
+    } else {
+      $('whois-box').innerHTML = `
+        <div class="error-state">
+          <div class="icon">⚠️</div>
+          <h4>WHOIS/RDAP Query Failed</h4>
+          <p>${escapeHtml(w.message || 'Lookup unavailable at this time due to rate limits or CORS restrictions.')}</p>
+        </div>`;
+    }
+    return;
+  }
+  
+  $('whois-box').innerHTML = `
+    <div class="whois-grid">
+      ${renderDomainSection(w)}
+      ${renderRegistrarSection(w.registrar)}
+      ${renderContactSection('Registrant Contact', w.registrant)}
+      ${renderContactSection('Technical Contact', w.technical)}
+    </div>`;
+}
+
+function renderCloudflare(detected, ip, viaNS, viaIP){
+  if(!detected){
+    $('cf-box').innerHTML = `<div class="row"><span class="badge off">⚪ Not Detected</span><span class="v">${ip?escapeHtml(ip):'—'}</span></div>`;
+    return;
+  }
+  $('cf-box').innerHTML = `
+    <div class="row"><span class="k">Cloudflare Status</span><span class="badge on">🟠 Proxy Enabled</span></div>
+    <div class="row"><span class="k">Returned IP</span><span class="v">${escapeHtml(ip||'—')} <span class="muted-small" style="display:inline">(Cloudflare edge IP)</span></span></div>
+    <div class="row"><span class="k">Detected via</span><span class="v"><div class="taglist">
+      ${viaNS?'<span class="tag">Nameservers</span>':''}${viaIP?'<span class="tag">IP Range</span>':''}
+    </div></span></div>`;
+}
+
+function renderOrigin(candidates, ctUnavailable, histUnavailable){
+  const box = $('origin-box');
+  let html = '';
+  if(!candidates.length){
+    html += `<div class="center-note">Cloudflare is successfully hiding the origin server.<br>No historical DNS records, unproxied subdomains, or CT-log hosts revealed a non-Cloudflare IP.</div>`;
+  } else {
+    candidates.forEach(c=>{
+      html += `
+      <div class="origin-item">
+        <div class="top">
+          <span class="ip">${escapeHtml(c.ip)}</span>
+          <span class="conf ${c.confidence}">${c.confidence} CONFIDENCE</span>
+        </div>
+        <div class="meta">
+          <span>Provider: <b>${escapeHtml(c.provider)}</b></span>
+          <span>ASN: <b>${escapeHtml(c.asn)}</b></span>
+          <span>Source: <b>${escapeHtml(c.sources.join(', '))}</b></span>
+          ${c.ptr?`<span>Reverse DNS: <b>${escapeHtml(c.ptr)}</b></span>`:''}
+          ${c.hostnames.length?`<span>Found on: <b>${escapeHtml(c.hostnames.join(', '))}</b></span>`:''}
+        </div>
+        <button class="copybtn" onclick="navigator.clipboard.writeText('${c.ip}')">copy ip</button>
+      </div>`;
+    });
+  }
+  const notes = [];
+  if(histUnavailable) notes.push('Historical DNS lookup (dnshistory.org) was unreachable during this check.');
+  if(ctUnavailable) notes.push('Certificate Transparency search (crt.sh) was unavailable during this check.');
+  notes.push('SecurityTrails, ViewDNS, VirusTotal, Censys and Netcraft require paid API keys and were not queried.');
+  html += `<div class="muted-small">${notes.join(' ')}</div>`;
+  box.innerHTML = html;
+}
+
+function renderSubs(subs){
+  const box = $('subs-box');
+  if(!subs.length){ box.innerHTML = `<div class="center-note">No subdomains resolved</div>`; return; }
+  box.innerHTML = `<div class="table-wrap"><table class="subs"><thead><tr><th>Subdomain</th><th>IP</th><th>Status</th></tr></thead><tbody>
+    ${subs.map(s=>`<tr>
+      <td>${escapeHtml(s.host)}</td>
+      <td>${s.ips.map(escapeHtml).join(', ')}</td>
+      <td>${s.proxied ? '<span class="badge on">Cloudflare</span>' : '<span class="badge good">Not Proxied</span>'}</td>
+    </tr>`).join('')}
+  </tbody></table></div>`;
+}
+
+/* ============================= EXPORT / COPY ============================= */
+$('copyIpBtn').onclick = () => {
+  if(!lastResult) return;
+  navigator.clipboard.writeText(lastResult.returnedIp || '');
+};
+$('downloadJson').onclick = () => {
+  if(!lastResult) return;
+  downloadFile(`${lastResult.domain}-dns-report.json`, JSON.stringify(lastResult, null, 2), 'application/json');
+};
+$('downloadCsv').onclick = () => {
+  if(!lastResult) return;
+  const rows = [['field','value']];
+  rows.push(['domain', lastResult.domain]);
+  rows.push(['checkedAt', lastResult.checkedAt]);
+  rows.push(['responseTimeMs', lastResult.responseTimeMs]);
+  rows.push(['dnssec', lastResult.dnssec]);
+  Object.entries(lastResult.records||{}).forEach(([k,v])=>rows.push([k, v.join('; ')]));
+  
+  const w = lastResult.whois || {};
+  rows.push(['whois_registered_on', w.registeredOn || '']);
+  rows.push(['whois_expires_on', w.expiresOn || '']);
+  rows.push(['whois_updated_on', w.updatedOn || '']);
+  rows.push(['whois_status', (w.status || []).join('; ')]);
+  rows.push(['whois_nameservers', (w.nameservers || []).join('; ')]);
+  rows.push(['whois_registrar_name', w.registrar?.name || '']);
+  rows.push(['whois_registrar_iana', w.registrar?.ianaId || '']);
+  rows.push(['whois_registrar_email', w.registrar?.email || '']);
+  rows.push(['whois_registrar_abuse_email', w.registrar?.abuseEmail || '']);
+  rows.push(['whois_registrar_abuse_phone', w.registrar?.abusePhone || '']);
+  
+  const contactFields = [
+    { label: 'org', key: 'organization' },
+    { label: 'street', key: 'street' },
+    { label: 'city', key: 'city' },
+    { label: 'state', key: 'state' },
+    { label: 'postal_code', key: 'postalCode' },
+    { label: 'country', key: 'country' },
+    { label: 'phone', key: 'phone' },
+    { label: 'email', key: 'email' }
+  ];
+  contactFields.forEach(f => {
+    rows.push([`whois_registrant_${f.label}`, w.registrant?.[f.key] || '']);
+    rows.push([`whois_technical_${f.label}`, w.technical?.[f.key] || '']);
+  });
+
+  rows.push(['cloudflareDetected', lastResult.cloudflare?.detected]);
+  rows.push(['returnedIp', lastResult.returnedIp||'']);
+  (lastResult.originCandidates||[]).forEach((c,i)=>{
+    rows.push([`origin_${i+1}_ip`, c.ip]);
+    rows.push([`origin_${i+1}_confidence`, c.confidence]);
+    rows.push([`origin_${i+1}_provider`, c.provider]);
+    rows.push([`origin_${i+1}_source`, c.sources.join('; ')]);
+  });
+  const csv = rows.map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  downloadFile(`${lastResult.domain}-dns-report.csv`, csv, 'text/csv');
+};
+function downloadFile(name, content, type){
+  const blob = new Blob([content], {type});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function getDomainFromUrl() {
+  let d = window.location.pathname.replace(/^\//, '');
+  if (!d && window.location.hash) {
+    d = window.location.hash.substring(1);
+  }
+  if (!d) {
+    const params = new URLSearchParams(window.location.search);
+    d = params.get('domain') || params.get('d');
+  }
+  d = d ? d.trim().toLowerCase() : '';
+  d = d.replace(/^https?:\/\//,'').replace(/\/.*$/,'');
+  return /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(d) ? d : null;
+}
+
+window.addEventListener('popstate', () => {
+  const domain = getDomainFromUrl();
+  if (domain) {
+    $('domainInput').value = domain;
+    runCheck(true);
+  } else {
+    $('domainInput').value = '';
+    $('results').classList.remove('show');
+  }
+});
+
+window.addEventListener('DOMContentLoaded', () => {
+  const domain = getDomainFromUrl();
+  if (domain) {
+    $('domainInput').value = domain;
+    runCheck(true);
+  }
+});</script>
+</body>
+</html>
